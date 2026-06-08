@@ -1,0 +1,242 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+}
+
+body {
+  background-color: black;
+  color: white;
+  font-family: var(--font-sans);
+  overscroll-behavior-y: contain; /* Disable pull-to-refresh */
+  -webkit-tap-highlight-color: transparent;
+  user-select: none; /* Prevent text selection for native feel */
+}
+
+:root {
+  --theme-bg: #05060a;
+  --theme-surface-950: #0b0d12;
+  --theme-surface-900: #10131a;
+  --theme-surface-800: #171b24;
+  --theme-border-900: #1e2530;
+  --theme-border-800: #2a3340;
+  --theme-border-700: #3a4554;
+  --theme-text-600: #6e7888;
+  --theme-text-500: #8a95a6;
+  --theme-text-400: #a7b2c2;
+  --theme-accent: #22c55e;
+  --theme-accent-soft: #34d399;
+}
+
+:root[data-ui-theme='balanced-green'] {
+  --theme-bg: #060b08;
+  --theme-surface-950: #0b130f;
+  --theme-surface-900: #122018;
+  --theme-surface-800: #183023;
+  --theme-border-900: #213528;
+  --theme-border-800: #2d4a37;
+  --theme-border-700: #3f654b;
+  --theme-text-600: #7e9a87;
+  --theme-text-500: #98b19f;
+  --theme-text-400: #b3c7b8;
+  --theme-accent: #22c55e;
+  --theme-accent-soft: #34d399;
+}
+
+:root[data-ui-theme='neon-xp'] {
+  --theme-bg: #090416;
+  --theme-surface-950: #120826;
+  --theme-surface-900: #1a0f35;
+  --theme-surface-800: #23164a;
+  --theme-border-900: #2e1d61;
+  --theme-border-800: #3b2782;
+  --theme-border-700: #4f37a6;
+  --theme-text-600: #9e8dd4;
+  --theme-text-500: #b7a6e8;
+  --theme-text-400: #d0c2fa;
+  --theme-accent: #3b82f6;
+  --theme-accent-soft: #22d3ee;
+}
+
+:root[data-ui-theme='beast-mode-red'] {
+  --theme-bg: #130506;
+  --theme-surface-950: #1f090b;
+  --theme-surface-900: #2d0f13;
+  --theme-surface-800: #431820;
+  --theme-border-900: #5d1f2a;
+  --theme-border-800: #7b2a39;
+  --theme-border-700: #a3394f;
+  --theme-text-600: #b48791;
+  --theme-text-500: #cc9ea7;
+  --theme-text-400: #e8bac0;
+  --theme-accent: #ef4444;
+  --theme-accent-soft: #fb7185;
+}
+
+:root[data-ui-theme='elite-gold'] {
+  --theme-bg: #110b02;
+  --theme-surface-950: #1c1304;
+  --theme-surface-900: #2b1d08;
+  --theme-surface-800: #3c2a0f;
+  --theme-border-900: #544019;
+  --theme-border-800: #6f5423;
+  --theme-border-700: #967435;
+  --theme-text-600: #b6a077;
+  --theme-text-500: #cdb88e;
+  --theme-text-400: #e5d3ad;
+  --theme-accent: #eab308;
+  --theme-accent-soft: #f59e0b;
+}
+
+:root[data-ui-theme='midnight-focus'] {
+  --theme-bg: #03060c;
+  --theme-surface-950: #070d18;
+  --theme-surface-900: #0f1726;
+  --theme-surface-800: #162138;
+  --theme-border-900: #1e2a44;
+  --theme-border-800: #27375a;
+  --theme-border-700: #35507c;
+  --theme-text-600: #798ba7;
+  --theme-text-500: #95a7c2;
+  --theme-text-400: #b4c5de;
+  --theme-accent: #60a5fa;
+  --theme-accent-soft: #22d3ee;
+}
+
+:root[data-ui-theme='sunrise-motivation'] {
+  --theme-bg: #120a04;
+  --theme-surface-950: #1e1106;
+  --theme-surface-900: #2a1909;
+  --theme-surface-800: #3f2610;
+  --theme-border-900: #5d3515;
+  --theme-border-800: #7f481f;
+  --theme-border-700: #a9602b;
+  --theme-text-600: #b89679;
+  --theme-text-500: #d0ad8f;
+  --theme-text-400: #eac8aa;
+  --theme-accent: #f97316;
+  --theme-accent-soft: #f59e0b;
+}
+
+:root[data-ui-theme='fresh-nutrition'] {
+  --theme-bg: #050d09;
+  --theme-surface-950: #0c1812;
+  --theme-surface-900: #12261c;
+  --theme-surface-800: #19372a;
+  --theme-border-900: #214a36;
+  --theme-border-800: #2b6147;
+  --theme-border-700: #3b7d5d;
+  --theme-text-600: #86a997;
+  --theme-text-500: #a0c2af;
+  --theme-text-400: #bedbcc;
+  --theme-accent: #10b981;
+  --theme-accent-soft: #22c55e;
+}
+
+:root[data-ui-theme='protein-power'] {
+  --theme-bg: #0e0609;
+  --theme-surface-950: #1a0b12;
+  --theme-surface-900: #27111b;
+  --theme-surface-800: #391928;
+  --theme-border-900: #52243a;
+  --theme-border-800: #6d3150;
+  --theme-border-700: #90426a;
+  --theme-text-600: #b08ca0;
+  --theme-text-500: #c8a4b8;
+  --theme-text-400: #dfbfd0;
+  --theme-accent: #ec4899;
+  --theme-accent-soft: #f472b6;
+}
+
+:root[data-ui-theme] body {
+  background-color: var(--theme-bg);
+}
+
+.app-theme {
+  background: radial-gradient(120% 90% at 0% 0%, color-mix(in oklab, var(--theme-accent) 16%, transparent), transparent 55%),
+              radial-gradient(120% 90% at 100% 0%, color-mix(in oklab, var(--theme-accent-soft) 16%, transparent), transparent 55%),
+              var(--theme-bg);
+}
+
+.app-theme .bg-black,
+.app-theme .bg-black\/90 {
+  background-color: var(--theme-bg) !important;
+}
+
+.app-theme .bg-zinc-950,
+.app-theme .bg-zinc-950\/60,
+.app-theme .bg-zinc-950\/80 {
+  background-color: var(--theme-surface-950) !important;
+}
+
+.app-theme .bg-zinc-900,
+.app-theme .bg-zinc-900\/50,
+.app-theme .bg-zinc-900\/60,
+.app-theme .bg-zinc-900\/70,
+.app-theme .bg-zinc-900\/80,
+.app-theme .bg-zinc-900\/90 {
+  background-color: var(--theme-surface-900) !important;
+}
+
+.app-theme .bg-zinc-800 {
+  background-color: var(--theme-surface-800) !important;
+}
+
+.app-theme .border-zinc-900,
+.app-theme .border-zinc-800,
+.app-theme .border-zinc-700 {
+  border-color: var(--theme-border-800) !important;
+}
+
+.app-theme .text-zinc-600 {
+  color: var(--theme-text-600) !important;
+}
+
+.app-theme .text-zinc-500 {
+  color: var(--theme-text-500) !important;
+}
+
+.app-theme .text-zinc-400 {
+  color: var(--theme-text-400) !important;
+}
+
+.app-theme .text-emerald-500,
+.app-theme .text-emerald-400,
+.app-theme .text-cyan-400,
+.app-theme .text-amber-400 {
+  color: var(--theme-accent-soft) !important;
+}
+
+.app-theme .bg-emerald-500,
+.app-theme .bg-cyan-500,
+.app-theme .bg-amber-500 {
+  background-color: var(--theme-accent) !important;
+}
+
+.app-theme .border-emerald-500,
+.app-theme .border-cyan-500,
+.app-theme .border-amber-500 {
+  border-color: var(--theme-accent) !important;
+}
+
+input, textarea {
+  user-select: text; /* Re-enable selection for inputs */
+}
+
+.safe-area-pb {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.safe-area-pt {
+  margin-top: env(safe-area-inset-top);
+}
+
+/* Hide scrollbar but keep functionality */
+::-webkit-scrollbar {
+  display: none;
+}
+* {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}

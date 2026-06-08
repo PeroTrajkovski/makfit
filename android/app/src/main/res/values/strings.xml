@@ -1,0 +1,9 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">МакФит</string>
+    <string name="title_activity_main">МакФит</string>
+    <string name="package_name">com.makfit.app</string>
+    <string name="custom_url_scheme">com.makfit.app</string>
+    <string name="google_client_id">145514988309-e1qs6ctiubml3b4cepuod5s3oudjqdiq.apps.googleusercontent.com</string>
+    <string name="server_client_id">145514988309-e1qs6ctiubml3b4cepuod5s3oudjqdiq.apps.googleusercontent.com</string>
+</resources>

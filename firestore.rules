@@ -1,0 +1,331 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: {userId}
+    // Fields:
+    //   - email: string (required)
+    //   - firstName: string (required)
+    //   - lastName: string (required)
+    //   - createdAt: string (optional)
+    //   - isGoogleUser: bool (optional)
+    //   - hasSetPassword: bool (optional)
+    //   - tempPassword: string (optional)
+    //
+    // Collection: profiles
+    // Document ID: {userId}
+    // Fields:
+    //   - userId: string (required)
+    //   - weight: number (required)
+    //   - height: number (required)
+    //   - age: int (required)
+    //   - gender: string (required, enum: male, female)
+    //   - activityLevel: string (required, enum: sedentary, light, moderate, active, very_active)
+    //   - goal: string (required, enum: cut, bulk, recomp)
+    //   - trainingType: string (optional)
+    //   - trainingFrequency: string (optional)
+    //   - dailyActivity: string (optional, enum: sedentary, light, moderate, active)
+    //   - profileImage: string (optional)
+    //   - targetCalories: int (optional)
+    //   - targetProtein: int (optional)
+    //   - targetCarbs: int (optional)
+    //   - targetFat: int (optional)
+    //   - isSetupDone: bool (optional)
+    //
+    // Collection: foods
+    // Document ID: {foodId}
+    // Fields:
+    //   - name: string (required)
+    //   - calories: number (required)
+    //   - protein: number (required)
+    //   - carbs: number (required)
+    //   - fat: number (required)
+    //
+    // Collection: meals
+    // Document ID: {mealId}
+    // Fields:
+    //   - userId: string (required)
+    //   - type: string (required, enum: breakfast, lunch, dinner, snack)
+    //   - date: string (required, ISO 8601)
+    //   - items: list (required, objects with foodId, name, amount, calories, protein, carbs, fat)
+    //
+    // Collection: weight_logs
+    // Document ID: {logId}
+    // Fields:
+    //   - userId: string (required)
+    //   - weight: number (required)
+    //   - date: string (required, ISO 8601)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isDocOwner() {
+      return isAuthenticated() && request.auth.uid == resource.data.userId;
+    }
+
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    function isValidDateString(dateStr) {
+      return dateStr is string && dateStr.matches("^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}.*Z?$");
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['email', 'firstName', 'lastName']) &&
+             hasOnlyAllowedFields(['email', 'firstName', 'lastName', 'createdAt', 'isGoogleUser', 'hasSetPassword', 'tempPassword']) &&
+             data.email is string && isValidEmail(data.email) &&
+             data.firstName is string && data.firstName.size() > 0 && data.firstName.size() < 100 &&
+             data.lastName is string && data.lastName.size() >= 0 && data.lastName.size() < 100 &&
+             (!('isGoogleUser' in data) || data.isGoogleUser is bool) &&
+             (!('hasSetPassword' in data) || data.hasSetPassword is bool) &&
+             (!('tempPassword' in data) || data.tempPassword is string);
+    }
+
+    // Like isValidUser but without hasOnlyAllowedFields — safe for partial/merged updates
+    function isValidUserUpdate(data) {
+      return data.keys().hasAll(['email', 'firstName', 'lastName']) &&
+             data.email is string && isValidEmail(data.email) &&
+             data.firstName is string && data.firstName.size() > 0 && data.firstName.size() < 100 &&
+             data.lastName is string && data.lastName.size() >= 0 && data.lastName.size() < 100 &&
+             (!('isGoogleUser' in data) || data.isGoogleUser is bool) &&
+             (!('hasSetPassword' in data) || data.hasSetPassword is bool) &&
+             (!('tempPassword' in data) || data.tempPassword is string);
+    }
+
+    function isValidFood(data) {
+      return data.keys().hasAll(['name', 'calories', 'protein', 'carbs', 'fat', 'name_lowercase']) &&
+             hasOnlyAllowedFields(['name', 'calories', 'protein', 'carbs', 'fat', 'name_lowercase']) &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 200 &&
+             data.name_lowercase is string && data.name_lowercase.size() > 0 &&
+             data.calories is number && data.calories >= 0 &&
+             data.protein is number && data.protein >= 0 &&
+             data.carbs is number && data.carbs >= 0 &&
+             data.fat is number && data.fat >= 0;
+    }
+
+    function isValidProfile(data) {
+      return data.keys().hasAll(['userId', 'weight', 'height', 'age', 'gender', 'activityLevel', 'goal']) &&
+             hasOnlyAllowedFields(['userId', 'weight', 'height', 'age', 'gender', 'activityLevel', 'goal', 'trainingType', 'trainingFrequency', 'dailyActivity', 'profileImage', 'targetCalories', 'targetProtein', 'targetCarbs', 'targetFat', 'isSetupDone', 'isPremium', 'mealPlanType', 'mealPlanSeed', 'subscriptionPlanId', 'subscriptionPlanTitle', 'subscriptionDurationMonths', 'subscriptionPriceMKD', 'subscriptionCurrency', 'subscriptionStartedAt', 'subscriptionExpiresAt', 'maxLevelAchieved', 'activeTheme']) &&
+             data.userId == request.auth.uid &&
+             data.weight is number && data.weight > 0 && data.weight < 500 &&
+             data.height is number && data.height > 0 && data.height < 300 &&
+             data.age is number && data.age > 0 && data.age < 150 &&
+             data.gender in ['male', 'female'] &&
+             data.activityLevel in ['sedentary', 'light', 'moderate', 'active', 'very_active'] &&
+             data.goal in ['cut', 'bulk', 'recomp', 'maintenance'] &&
+             (!('dailyActivity' in data) || data.dailyActivity in ['sedentary', 'light', 'moderate', 'active']) &&
+             (!('isPremium' in data) || data.isPremium is bool) &&
+             (!('mealPlanType' in data) || data.mealPlanType in ['high_protein', 'low_fat', 'low_carbs', 'vegetarian', 'lactose_free']) &&
+             (!('mealPlanSeed' in data) || (data.mealPlanSeed is number && data.mealPlanSeed > 0)) &&
+             (!('subscriptionPlanId' in data) || data.subscriptionPlanId is string) &&
+             (!('subscriptionPlanTitle' in data) || data.subscriptionPlanTitle is string) &&
+             (!('subscriptionDurationMonths' in data) || (data.subscriptionDurationMonths is number && data.subscriptionDurationMonths > 0 && data.subscriptionDurationMonths <= 24)) &&
+             (!('subscriptionPriceMKD' in data) || (data.subscriptionPriceMKD is number && data.subscriptionPriceMKD > 0)) &&
+             (!('subscriptionCurrency' in data) || data.subscriptionCurrency == 'MKD') &&
+             (!('subscriptionStartedAt' in data) || isValidDateString(data.subscriptionStartedAt)) &&
+             (!('subscriptionExpiresAt' in data) || isValidDateString(data.subscriptionExpiresAt)) &&
+             (!('maxLevelAchieved' in data) || (data.maxLevelAchieved is number && data.maxLevelAchieved >= 1 && data.maxLevelAchieved <= 20)) &&
+             (!('activeTheme' in data) || data.activeTheme in ['balanced-green', 'neon-xp', 'beast-mode-red', 'elite-gold', 'midnight-focus', 'sunrise-motivation', 'fresh-nutrition', 'protein-power']);
+    }
+
+    function isValidMeal(data) {
+      return data.keys().hasAll(['userId', 'type', 'date', 'items']) &&
+             hasOnlyAllowedFields(['userId', 'type', 'date', 'items']) &&
+             data.userId == request.auth.uid &&
+             data.type in ['breakfast', 'lunch', 'dinner', 'snack'] &&
+             isValidDateString(data.date) &&
+             data.items is list && data.items.size() > 0 && data.items.size() < 50;
+    }
+
+    function isValidWeightLog(data) {
+      return data.keys().hasAll(['userId', 'weight', 'date']) &&
+             hasOnlyAllowedFields(['userId', 'weight', 'date']) &&
+             data.userId == request.auth.uid &&
+             data.weight is number && data.weight > 0 && data.weight < 500 &&
+             isValidDateString(data.date);
+    }
+
+    function isValidProgressPhoto(data) {
+      return data.keys().hasAll(['userId', 'imageData', 'date', 'weight']) &&
+             hasOnlyAllowedFields(['userId', 'imageData', 'date', 'weight']) &&
+             data.userId == request.auth.uid &&
+             data.imageData is string && data.imageData.size() > 100 && data.imageData.size() < 1500000 &&
+             isValidDateString(data.date) &&
+             data.weight is number && data.weight > 0 && data.weight < 500;
+    }
+
+    function isValidPointSpend(data) {
+      return data.keys().hasAll(['userId', 'type', 'cost', 'date']) &&
+             hasOnlyAllowedFields(['userId', 'type', 'cost', 'targetDayKey', 'targetChallengeKey', 'targetReplacementId', 'targetThemeId', 'date']) &&
+             data.userId == request.auth.uid &&
+             data.type in ['streak_restore', 'challenge_complete', 'challenge_swap', 'theme_purchase'] &&
+             data.cost is number && data.cost > 0 && data.cost <= 5000 &&
+             (data.type == 'streak_restore'
+               ? (('targetDayKey' in data) && data.targetDayKey is string && data.targetDayKey.matches('^\\d{4}-\\d{2}-\\d{2}$'))
+               : data.type == 'challenge_complete'
+                 ? (('targetChallengeKey' in data) && data.targetChallengeKey is string && data.targetChallengeKey.size() > 0)
+                 : data.type == 'challenge_swap'
+                   ? (('targetChallengeKey' in data) && data.targetChallengeKey is string && data.targetChallengeKey.size() > 0 &&
+                      ('targetReplacementId' in data) && data.targetReplacementId is string && data.targetReplacementId.size() > 0)
+                   : (('targetThemeId' in data) && data.targetThemeId in ['balanced-green', 'neon-xp', 'beast-mode-red', 'elite-gold', 'midnight-focus', 'sunrise-motivation', 'fresh-nutrition', 'protein-power'])) &&
+             isValidDateString(data.date);
+    }
+
+    function isValidStreakRestore(data) {
+      return data.keys().hasAll(['userId', 'dayKey', 'cost', 'type', 'date']) &&
+             hasOnlyAllowedFields(['userId', 'dayKey', 'cost', 'type', 'date']) &&
+             data.userId == request.auth.uid &&
+             data.type in ['streak_restore'] &&
+             data.cost is number && data.cost > 0 && data.cost <= 5000 &&
+             data.dayKey is string && data.dayKey.matches('^\\d{4}-\\d{2}-\\d{2}$') &&
+             isValidDateString(data.date);
+    }
+
+    function isValidChallengeCompletion(data) {
+      return data.keys().hasAll(['userId', 'challengePurchaseKey', 'type', 'cost', 'date']) &&
+             hasOnlyAllowedFields(['userId', 'challengePurchaseKey', 'type', 'cost', 'date']) &&
+             data.userId == request.auth.uid &&
+             data.type in ['challenge_complete'] &&
+             data.cost is number && data.cost > 0 && data.cost <= 5000 &&
+             data.challengePurchaseKey is string && data.challengePurchaseKey.size() > 0 &&
+             isValidDateString(data.date);
+    }
+
+    function isValidChallengeSwap(data) {
+      return data.keys().hasAll(['userId', 'section', 'periodKey', 'fromChallengeId', 'toChallengeId', 'cost', 'type', 'date']) &&
+             hasOnlyAllowedFields(['userId', 'section', 'periodKey', 'fromChallengeId', 'toChallengeId', 'cost', 'type', 'date']) &&
+             data.userId == request.auth.uid &&
+             data.section in ['daily', 'weekly', 'monthly', 'yearly'] &&
+             data.periodKey is string && data.periodKey.size() > 0 &&
+             data.fromChallengeId is string && data.fromChallengeId.size() > 0 &&
+             data.toChallengeId is string && data.toChallengeId.size() > 0 &&
+             data.fromChallengeId != data.toChallengeId &&
+             data.type in ['challenge_swap'] &&
+             data.cost is number && data.cost > 0 && data.cost <= 5000 &&
+             isValidDateString(data.date);
+    }
+
+    function isValidThemePurchase(data) {
+      return data.keys().hasAll(['userId', 'themeId', 'cost', 'type', 'date']) &&
+             hasOnlyAllowedFields(['userId', 'themeId', 'cost', 'type', 'date']) &&
+             data.userId == request.auth.uid &&
+             data.themeId in ['balanced-green', 'neon-xp', 'beast-mode-red', 'elite-gold', 'midnight-focus', 'sunrise-motivation', 'fresh-nutrition', 'protein-power'] &&
+             data.type in ['theme_purchase'] &&
+             data.cost is number && data.cost >= 0 && data.cost <= 5000 &&
+             isValidDateString(data.date);
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isAuthenticated() && request.auth.uid == userId;
+      allow create: if isAuthenticated() && request.auth.uid == userId && isValidUser(request.resource.data);
+      allow update: if isAuthenticated() && request.auth.uid == userId && isValidUserUpdate(request.resource.data);
+    }
+
+    match /profiles/{userId} {
+      allow read: if isAuthenticated() && (request.auth.uid == userId || (resource != null && resource.data.userId == request.auth.uid));
+      allow create: if isAuthenticated() &&
+                    request.auth.uid == userId &&
+                    isValidProfile(request.resource.data) &&
+                    (!('isPremium' in request.resource.data) || request.resource.data.isPremium == false);
+      allow update: if isAuthenticated() &&
+                    request.auth.uid == userId &&
+                    isValidProfile(request.resource.data) &&
+                    request.resource.data.isPremium == resource.data.isPremium;
+    }
+
+    match /foods/{foodId} {
+      allow read: if isAuthenticated();
+      allow write: if false;
+    }
+
+    match /meals/{mealId} {
+      allow read: if isAuthenticated() && (resource == null || resource.data.userId == request.auth.uid);
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid && isValidMeal(request.resource.data);
+      allow update: if isAuthenticated() && resource.data.userId == request.auth.uid && request.resource.data.userId == request.auth.uid && isValidMeal(request.resource.data);
+      allow delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
+    }
+
+    match /weight_logs/{logId} {
+      allow read: if isAuthenticated() && (resource == null || resource.data.userId == request.auth.uid);
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid && isValidWeightLog(request.resource.data);
+      allow update: if isAuthenticated() && resource.data.userId == request.auth.uid && request.resource.data.userId == request.auth.uid && isValidWeightLog(request.resource.data);
+      allow delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
+    }
+
+    match /progress_photos/{photoId} {
+      allow read: if isAuthenticated() && (resource == null || resource.data.userId == request.auth.uid);
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid && isValidProgressPhoto(request.resource.data);
+      allow update: if false;
+      allow delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
+    }
+
+    match /point_spends/{spendId} {
+      allow read: if isAuthenticated() && (resource == null || resource.data.userId == request.auth.uid);
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid && isValidPointSpend(request.resource.data);
+      allow update: if false;
+      allow delete: if false;
+    }
+
+    match /streak_restores/{restoreId} {
+      allow read: if isAuthenticated() && (resource == null || resource.data.userId == request.auth.uid);
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid && isValidStreakRestore(request.resource.data);
+      allow update: if false;
+      allow delete: if false;
+    }
+
+    match /challenge_completions/{completionId} {
+      allow read: if isAuthenticated() && (resource == null || resource.data.userId == request.auth.uid);
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid && isValidChallengeCompletion(request.resource.data);
+      allow update: if false;
+      allow delete: if false;
+    }
+
+    match /challenge_swaps/{swapId} {
+      allow read: if isAuthenticated() && (resource == null || resource.data.userId == request.auth.uid);
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid && isValidChallengeSwap(request.resource.data);
+      allow update: if false;
+      allow delete: if false;
+    }
+
+    match /theme_purchases/{purchaseId} {
+      allow read: if isAuthenticated() && (resource == null || resource.data.userId == request.auth.uid);
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid && isValidThemePurchase(request.resource.data);
+      allow update: if false;
+      allow delete: if false;
+    }
+
+    // Test connection rule
+    match /test/connection {
+      allow read: if true;
+    }
+  }
+}

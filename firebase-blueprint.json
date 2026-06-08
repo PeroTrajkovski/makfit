@@ -1,0 +1,115 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User account information",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string", "format": "email" },
+        "firstName": { "type": "string" },
+        "lastName": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "isGoogleUser": { "type": "boolean" },
+        "hasSetPassword": { "type": "boolean" },
+        "tempPassword": { "type": "string" }
+      },
+      "required": ["email", "firstName", "lastName"]
+    },
+    "Profile": {
+      "title": "Profile",
+      "description": "User fitness profile and targets",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "weight": { "type": "number" },
+        "height": { "type": "number" },
+        "age": { "type": "integer" },
+        "gender": { "type": "string", "enum": ["male", "female"] },
+        "activityLevel": { "type": "string", "enum": ["sedentary", "light", "moderate", "active", "very_active"] },
+        "goal": { "type": "string", "enum": ["cut", "bulk", "recomp", "maintenance"] },
+        "trainingType": { "type": "string" },
+        "trainingFrequency": { "type": "string" },
+        "dailyActivity": { "type": "string", "enum": ["sedentary", "light", "moderate", "active"] },
+        "profileImage": { "type": "string" },
+        "targetCalories": { "type": "integer" },
+        "targetProtein": { "type": "integer" },
+        "targetCarbs": { "type": "integer" },
+        "targetFat": { "type": "integer" },
+        "isSetupDone": { "type": "boolean" }
+      },
+      "required": ["userId", "weight", "height", "age", "gender", "activityLevel", "goal"]
+    },
+    "Food": {
+      "title": "Food",
+      "description": "Food item with nutritional info",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "calories": { "type": "number" },
+        "protein": { "type": "number" },
+        "carbs": { "type": "number" },
+        "fat": { "type": "number" }
+      },
+      "required": ["name", "calories", "protein", "carbs", "fat"]
+    },
+    "Meal": {
+      "title": "Meal",
+      "description": "A meal logged by a user",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "type": { "type": "string", "enum": ["breakfast", "lunch", "dinner", "snack"] },
+        "date": { "type": "string", "format": "date-time" },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "foodId": { "type": "string" },
+              "name": { "type": "string" },
+              "amount": { "type": "number" },
+              "calories": { "type": "number" },
+              "protein": { "type": "number" },
+              "carbs": { "type": "number" },
+              "fat": { "type": "number" }
+            }
+          }
+        }
+      },
+      "required": ["userId", "type", "date", "items"]
+    },
+    "WeightLog": {
+      "title": "WeightLog",
+      "description": "User weight tracking entry",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "weight": { "type": "number" },
+        "date": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "weight", "date"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User documents"
+    },
+    "/profiles/{userId}": {
+      "schema": "Profile",
+      "description": "User fitness profiles"
+    },
+    "/foods/{foodId}": {
+      "schema": "Food",
+      "description": "Global food database"
+    },
+    "/meals/{mealId}": {
+      "schema": "Meal",
+      "description": "User logged meals"
+    },
+    "/weight_logs/{logId}": {
+      "schema": "WeightLog",
+      "description": "User weight history"
+    }
+  }
+}
