@@ -206,7 +206,7 @@ export default function SearchView({ user, isPremium, selectedMealType, selected
                     {food.calories} kcal • П: {food.protein}г • Ј: {food.carbs}г • М: {food.fat}г
                   </p>
                   <p className="text-[10px] text-emerald-500 mt-1 font-bold uppercase tracking-wider">
-                    + Додај порција ({defaultGrams}г)
+                    + Додади порција ({defaultGrams}г)
                   </p>
                 </button>
                 <button
@@ -296,7 +296,7 @@ export default function SearchView({ user, isPremium, selectedMealType, selected
                           Number(foodQuantity) === q ? 'bg-emerald-500 border-emerald-500 text-black' : 'bg-zinc-800/50 border-zinc-700 text-zinc-400 hover:border-zinc-500',
                         )}
                       >
-                        {q === 350 ? 'Порција' : `${q}г`}
+                        {`${q}г`}
                       </button>
                     ))}
                   </div>

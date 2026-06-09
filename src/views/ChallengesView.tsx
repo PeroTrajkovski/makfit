@@ -481,6 +481,7 @@ function ChallengeLevelBadge({ level }: { level: number }) {
 
 export default function ChallengesView({ user, profile, weightHistory, setView, focusAchievementId = null }: Props) {
 	const STREAK_RESTORE_COST = 500;
+	const isPremium = profile?.isPremium === true;
 	const collapsedSections = {
 		daily: false,
 		weekly: false,
@@ -537,6 +538,15 @@ export default function ChallengesView({ user, profile, weightHistory, setView, 
 			}
 		}
 	}, [focusAchievementId]);
+
+	useEffect(() => {
+		if (isPremium) return;
+		setIsSpendModalOpen(false);
+		setSelectedSpendOption(null);
+		setSelectedChallengeKey(null);
+		setSelectedSwapKey(null);
+		setSpendFeedback(null);
+	}, [isPremium]);
 
 	useEffect(() => {
 		if (!isSpendModalOpen) return;
@@ -645,26 +655,71 @@ export default function ChallengesView({ user, profile, weightHistory, setView, 
 	}, [user]);
 
 	const computed = useMemo(() => {
-		const purchasedCompletions = new Set(purchasedChallengeCompletions);
 		const today = new Date();
 		const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
 		const weekStart = startOfWeek(today);
-		const monthStart = startOfMonth(today);
-		const yearStart = startOfYear(today);
 		const weekKey = dayKey(weekStart.toISOString());
+		const monthStart = startOfMonth(today);
 		const monthKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+		const yearStart = startOfYear(today);
 		const yearKey = `${today.getFullYear()}`;
 
-		const todayMeals = allMeals.filter(m => dayKey(m.date) === todayStr);
-		const thisWeekMeals = allMeals.filter(m => new Date(m.date) >= weekStart);
-		const thisMonthMeals = allMeals.filter(m => new Date(m.date) >= monthStart);
-		const thisYearMeals = allMeals.filter(m => new Date(m.date) >= yearStart);
-		const thisWeekWeightLogs = weightHistory.filter(w => new Date(w.date) >= weekStart);
-		const thisMonthWeightLogs = weightHistory.filter(w => new Date(w.date) >= monthStart);
-		const thisYearWeightLogs = weightHistory.filter(w => new Date(w.date) >= yearStart);
-		const thisWeekPhotos = photos.filter(p => new Date(p.date) >= weekStart);
-		const thisMonthPhotos = photos.filter(p => new Date(p.date) >= monthStart);
-		const thisYearPhotos = photos.filter(p => new Date(p.date) >= yearStart);
+		const premiumWindowStartMs = profile?.subscriptionStartedAt
+			? Date.parse(profile.subscriptionStartedAt)
+			: Number.NaN;
+		const hasPremiumWindowStart = Number.isFinite(premiumWindowStartMs);
+
+		const premiumMeals = hasPremiumWindowStart
+			? allMeals.filter(m => new Date(m.date).getTime() >= premiumWindowStartMs)
+			: [];
+		const premiumPhotos = hasPremiumWindowStart
+			? photos.filter(p => new Date(p.date).getTime() >= premiumWindowStartMs)
+			: [];
+		const premiumWeightLogs = hasPremiumWindowStart
+			? weightHistory.filter(w => new Date(w.date).getTime() >= premiumWindowStartMs)
+			: [];
+		const premiumRestoreDays = hasPremiumWindowStart
+			? streakRestoreDays.filter(day => {
+					const dayMs = Date.parse(`${day}T00:00:00.000Z`);
+					return Number.isFinite(dayMs) && dayMs >= premiumWindowStartMs;
+			  })
+			: [];
+
+		if (!isPremium) {
+			return {
+				dailyChallenges: [] as ChallengeItem[],
+				weeklyChallenges: [] as ChallengeItem[],
+				monthlyChallenges: [] as ChallengeItem[],
+				yearlyChallenges: [] as ChallengeItem[],
+				badges: [] as BadgeWithState[],
+				streak: 0,
+				earnedPoints: 0,
+				challengePoints: 0,
+				badgePoints: 0,
+				level: Math.max(1, profile?.maxLevelAchieved ?? 1),
+				todayKey: todayStr,
+				weekKey,
+				monthKey,
+				yearKey,
+				dailyRankedPool: [] as ChallengeItem[],
+				weeklyRankedPool: [] as ChallengeItem[],
+				monthlyRankedPool: [] as ChallengeItem[],
+				yearlyRankedPool: [] as ChallengeItem[],
+			};
+		}
+
+		const purchasedCompletions = new Set(purchasedChallengeCompletions);
+
+		const todayMeals = premiumMeals.filter(m => dayKey(m.date) === todayStr);
+		const thisWeekMeals = premiumMeals.filter(m => new Date(m.date) >= weekStart);
+		const thisMonthMeals = premiumMeals.filter(m => new Date(m.date) >= monthStart);
+		const thisYearMeals = premiumMeals.filter(m => new Date(m.date) >= yearStart);
+		const thisWeekWeightLogs = premiumWeightLogs.filter(w => new Date(w.date) >= weekStart);
+		const thisMonthWeightLogs = premiumWeightLogs.filter(w => new Date(w.date) >= monthStart);
+		const thisYearWeightLogs = premiumWeightLogs.filter(w => new Date(w.date) >= yearStart);
+		const thisWeekPhotos = premiumPhotos.filter(p => new Date(p.date) >= weekStart);
+		const thisMonthPhotos = premiumPhotos.filter(p => new Date(p.date) >= monthStart);
+		const thisYearPhotos = premiumPhotos.filter(p => new Date(p.date) >= yearStart);
 
 		const mealTypesToday = new Set(todayMeals.map(m => m.type));
 		const hasBreakfast = mealTypesToday.has('breakfast');
@@ -816,14 +871,14 @@ export default function ChallengesView({ user, profile, weightHistory, setView, 
 		const completedWithPurchase = (section: 'daily' | 'weekly' | 'monthly' | 'yearly', periodKey: string, challenge: ChallengeItem): boolean =>
 			isChallengeCompleted(challenge) || purchasedCompletions.has(challengeCompletionKey(section, periodKey, challenge.id));
 
-		const streak = mealLogStreakWithRestores(allMeals, streakRestoreDays);
-		const daysProteinHit = countProteinTargetDays(allMeals, proteinGoal);
-		const totalPlannedMeals = countPlannedMeals(allMeals);
+		const streak = mealLogStreakWithRestores(premiumMeals, premiumRestoreDays);
+		const daysProteinHit = countProteinTargetDays(premiumMeals, proteinGoal);
+		const totalPlannedMeals = countPlannedMeals(premiumMeals);
 
 		const badges = buildBadges({
-			allMealsCount: allMeals.length,
-			photosCount: photos.length,
-			weightCount: weightHistory.length,
+			allMealsCount: premiumMeals.length,
+			photosCount: premiumPhotos.length,
+			weightCount: premiumWeightLogs.length,
 			unlockedThemesCount: themePurchaseIds.length,
 			streak,
 			daysProteinHit,
@@ -864,9 +919,9 @@ export default function ChallengesView({ user, profile, weightHistory, setView, 
 			monthlyRankedPool,
 			yearlyRankedPool,
 		};
-	}, [allMeals, challengeSwaps, photos, profile, purchasedChallengeCompletions, streakRestoreDays, themePurchaseIds.length, weightHistory]);
+	}, [allMeals, challengeSwaps, isPremium, photos, profile, purchasedChallengeCompletions, streakRestoreDays, themePurchaseIds.length, weightHistory]);
 
-	const availablePoints = Math.max(0, computed.earnedPoints - spentPointsTotal);
+	const availablePoints = isPremium ? Math.max(0, computed.earnedPoints - spentPointsTotal) : 0;
 	const maxAchievedLevel = Math.max(computed.level, profile?.maxLevelAchieved ?? 1);
 	const purchasedChallengeCompletionSet = useMemo(() => new Set(purchasedChallengeCompletions), [purchasedChallengeCompletions]);
 	const challengeSpendOptions = useMemo(() => {
@@ -973,7 +1028,7 @@ export default function ChallengesView({ user, profile, weightHistory, setView, 
 	}, [challengeSwapOptions, selectedSpendOption, selectedSwapKey]);
 
 	useEffect(() => {
-		if (!user) return;
+		if (!user || !isPremium) return;
 		if (computed.level <= (profile?.maxLevelAchieved ?? 1)) return;
 
 		setDoc(
@@ -981,10 +1036,10 @@ export default function ChallengesView({ user, profile, weightHistory, setView, 
 			{ maxLevelAchieved: computed.level },
 			{ merge: true },
 		).catch(error => handleFirestoreError(error, OperationType.UPDATE, 'profiles/maxLevelAchieved'));
-	}, [computed.level, profile?.maxLevelAchieved, user]);
+	}, [computed.level, isPremium, profile?.maxLevelAchieved, user]);
 
 	const handleStreakRestorePurchase = async () => {
-		if (!user || !revivableDay) return;
+		if (!user || !isPremium || !revivableDay) return;
 		if (availablePoints < STREAK_RESTORE_COST || isPurchasingRestore) return;
 
 		setIsPurchasingRestore(true);
@@ -1025,7 +1080,7 @@ export default function ChallengesView({ user, profile, weightHistory, setView, 
 	};
 
 	const handleChallengeCompletionPurchase = async () => {
-		if (!user || !selectedChallengeOption) return;
+		if (!user || !isPremium || !selectedChallengeOption) return;
 		if (availablePoints < selectedChallengeOption.cost || isPurchasingRestore) return;
 
 		setIsPurchasingRestore(true);
@@ -1066,7 +1121,7 @@ export default function ChallengesView({ user, profile, weightHistory, setView, 
 	};
 
 	const handleChallengeSwapPurchase = async () => {
-		if (!user || !selectedSwapOption) return;
+		if (!user || !isPremium || !selectedSwapOption) return;
 		if (availablePoints < selectedSwapOption.cost || isPurchasingRestore) return;
 
 		const sectionState = selectedSwapOption.section === 'daily'

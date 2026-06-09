@@ -3,14 +3,25 @@ import { getAuth } from 'firebase/auth';
 import { initializeFirestore, persistentLocalCache, persistentSingleTabManager } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
 
+const firebaseApiKey = (import.meta.env.VITE_FIREBASE_API_KEY as string | undefined)?.trim();
+
+if (!firebaseApiKey) {
+  throw new Error('Missing VITE_FIREBASE_API_KEY. Add it to your environment variables.');
+}
+
+const resolvedFirebaseConfig = {
+  ...firebaseConfig,
+  apiKey: firebaseApiKey,
+};
+
 // Initialize Firebase SDK
-const app = initializeApp(firebaseConfig);
+const app = initializeApp(resolvedFirebaseConfig);
 export const db = initializeFirestore(app, {
   localCache: persistentLocalCache({
     tabManager: persistentSingleTabManager({ forceOwnership: true }),
     cacheSizeBytes: 20 * 1024 * 1024, // 20 MB max — auto-cleans old data beyond this
   }),
-}, firebaseConfig.firestoreDatabaseId);
+}, resolvedFirebaseConfig.firestoreDatabaseId);
 export const auth = getAuth(app);
 
 export enum OperationType {

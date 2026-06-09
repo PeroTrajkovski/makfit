@@ -10,6 +10,7 @@ import {
   createUserWithEmailAndPassword,
   onAuthStateChanged,
   signOut,
+  deleteUser,
   User as FirebaseUser,
   GoogleAuthProvider,
   signInWithPopup,
@@ -56,9 +57,7 @@ async function testConnection() {
   try {
     await getDocFromServer(doc(db, 'test', 'connection'));
   } catch (error) {
-    if (error instanceof Error && error.message.includes('the client is offline')) {
-      console.error('Please check your Firebase configuration.');
-    }
+    // Firebase connection issue
   }
 }
 testConnection();
@@ -348,6 +347,26 @@ function AppContent() {
       subscriptionNextChargeAt: monthlyExpiresAt,
     })
       .catch(error => handleFirestoreError(error, OperationType.UPDATE, `profiles/${user.uid}`))
+      .finally(() => {
+        subscriptionSyncInFlightRef.current = false;
+      });
+  }, [profile, user]);
+
+  useEffect(() => {
+    if (!user || !profile || subscriptionSyncInFlightRef.current) return;
+    if (!profile.isPremium) return;
+    if (profile.subscriptionStartedAt) return;
+
+    subscriptionSyncInFlightRef.current = true;
+    const nowIso = new Date().toISOString();
+
+    updateDoc(doc(db, 'profiles', user.uid), {
+      subscriptionStartedAt: nowIso,
+      ...(profile.subscriptionStatus === 'trialing' && !profile.subscriptionTrialStartedAt
+        ? { subscriptionTrialStartedAt: nowIso }
+        : {}),
+    })
+      .catch(error => handleFirestoreError(error, OperationType.UPDATE, `profiles/${user.uid}/subscriptionStartedAt`))
       .finally(() => {
         subscriptionSyncInFlightRef.current = false;
       });
@@ -669,16 +688,37 @@ function AppContent() {
     const monthKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
     const yearKey = String(today.getFullYear());
 
-    const todayMeals = allMealsForAchievements.filter(m => dayKey(m.date) === todayStr);
-    const thisWeekMeals = allMealsForAchievements.filter(m => new Date(m.date) >= weekStart);
-    const thisMonthMeals = allMealsForAchievements.filter(m => new Date(m.date) >= monthStart);
-    const thisYearMeals = allMealsForAchievements.filter(m => new Date(m.date) >= yearStart);
-    const thisWeekWeightLogs = weightHistory.filter(w => new Date(w.date) >= weekStart);
-    const thisMonthWeightLogs = weightHistory.filter(w => new Date(w.date) >= monthStart);
-    const thisYearWeightLogs = weightHistory.filter(w => new Date(w.date) >= yearStart);
-    const thisWeekPhotos = allPhotosForAchievements.filter(p => new Date(p.date) >= weekStart);
-    const thisMonthPhotos = allPhotosForAchievements.filter(p => new Date(p.date) >= monthStart);
-    const thisYearPhotos = allPhotosForAchievements.filter(p => new Date(p.date) >= yearStart);
+    const premiumWindowStartMs = profile.subscriptionStartedAt
+      ? Date.parse(profile.subscriptionStartedAt)
+      : Number.NaN;
+    const hasPremiumWindowStart = Number.isFinite(premiumWindowStartMs);
+
+    const premiumMeals = hasPremiumWindowStart
+      ? allMealsForAchievements.filter(m => new Date(m.date).getTime() >= premiumWindowStartMs)
+      : [];
+    const premiumPhotos = hasPremiumWindowStart
+      ? allPhotosForAchievements.filter(p => new Date(p.date).getTime() >= premiumWindowStartMs)
+      : [];
+    const premiumWeightLogs = hasPremiumWindowStart
+      ? weightHistory.filter(w => new Date(w.date).getTime() >= premiumWindowStartMs)
+      : [];
+    const premiumRestoreDays = hasPremiumWindowStart
+      ? streakRestoreDaysForAchievements.filter(day => {
+          const dayMs = Date.parse(`${day}T00:00:00.000Z`);
+          return Number.isFinite(dayMs) && dayMs >= premiumWindowStartMs;
+        })
+      : [];
+
+    const todayMeals = premiumMeals.filter(m => dayKey(m.date) === todayStr);
+    const thisWeekMeals = premiumMeals.filter(m => new Date(m.date) >= weekStart);
+    const thisMonthMeals = premiumMeals.filter(m => new Date(m.date) >= monthStart);
+    const thisYearMeals = premiumMeals.filter(m => new Date(m.date) >= yearStart);
+    const thisWeekWeightLogs = premiumWeightLogs.filter(w => new Date(w.date) >= weekStart);
+    const thisMonthWeightLogs = premiumWeightLogs.filter(w => new Date(w.date) >= monthStart);
+    const thisYearWeightLogs = premiumWeightLogs.filter(w => new Date(w.date) >= yearStart);
+    const thisWeekPhotos = premiumPhotos.filter(p => new Date(p.date) >= weekStart);
+    const thisMonthPhotos = premiumPhotos.filter(p => new Date(p.date) >= monthStart);
+    const thisYearPhotos = premiumPhotos.filter(p => new Date(p.date) >= yearStart);
 
     const mealTypesToday = new Set(todayMeals.map(m => m.type));
     const hasBreakfast = mealTypesToday.has('breakfast');
@@ -822,14 +862,14 @@ function AppContent() {
       yearKey,
     );
 
-    const streak = mealLogStreakWithRestores(allMealsForAchievements, streakRestoreDaysForAchievements);
-    const daysProteinHit = countProteinTargetDays(allMealsForAchievements, proteinGoal);
-    const totalPlannedMeals = countPlannedMeals(allMealsForAchievements);
+    const streak = mealLogStreakWithRestores(premiumMeals, premiumRestoreDays);
+    const daysProteinHit = countProteinTargetDays(premiumMeals, proteinGoal);
+    const totalPlannedMeals = countPlannedMeals(premiumMeals);
 
     const badges = buildBadges({
-      allMealsCount: allMealsForAchievements.length,
-      photosCount: allPhotosForAchievements.length,
-      weightCount: weightHistory.length,
+      allMealsCount: premiumMeals.length,
+      photosCount: premiumPhotos.length,
+      weightCount: premiumWeightLogs.length,
       unlockedThemesCount: purchasedThemeIds.length,
       streak,
       daysProteinHit,
@@ -1103,6 +1143,52 @@ function AppContent() {
     setView('auth');
   };
 
+  const handleDeleteAccount = async () => {
+    if (!user) return;
+
+    const uid = user.uid;
+    const userScopedCollections = [
+      'meals',
+      'weight_logs',
+      'progress_photos',
+      'streak_restores',
+      'challenge_completions',
+      'challenge_swaps',
+      'theme_purchases',
+      'point_spends',
+    ];
+
+    setAuthError(null);
+
+    try {
+      // Delete all user data from Firestore collections
+      for (const collectionName of userScopedCollections) {
+        const snap = await getDocs(
+          query(collection(db, collectionName), where('userId', '==', uid)),
+        );
+        await Promise.all(snap.docs.map(d => deleteDoc(d.ref)));
+      }
+
+      // Delete user profile and user documents
+      await deleteDoc(doc(db, 'profiles', uid));
+      await deleteDoc(doc(db, 'users', uid));
+
+      // Delete the user account from Firebase Auth
+      try {
+        await deleteUser(user);
+      } catch (authError: any) {
+        // Profile already deleted, but show error about auth account
+        setAuthError('Профилот е избришан. ' + getFriendlyErrorMessage(authError));
+      }
+      
+      // Log out
+      await handleLogout();
+    } catch (error: any) {
+      setAuthError(getFriendlyErrorMessage(error));
+      throw error;
+    }
+  };
+
   // --- Onboarding / profile save ---
   const handleOnboarding = async () => {
     savingRef.current = true;
@@ -1192,7 +1278,7 @@ function AppContent() {
 
       setView(isEditingProfile ? 'profile' : 'dashboard');
     } catch (error) {
-      console.error(error);
+      // Error handled silently
     } finally { savingRef.current = false; setLoading(false); }
   };
 
@@ -1473,6 +1559,7 @@ function AppContent() {
         handleImageUpload={handleImageUpload} setView={setView}
         setFirstName={setFirstName} setLastName={setLastName}
         cancelEditProfile={handleCancelEditProfile}
+        handleDeleteAccount={handleDeleteAccount}
       />
     );
   }

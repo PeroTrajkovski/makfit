@@ -35,6 +35,7 @@ interface Props {
   authError: string | null;
   handleOnboarding: () => void;
   handleLogout: () => void;
+  handleDeleteAccount: () => Promise<void>;
   handleImageUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
   setView: (v: ViewType) => void;
 }
@@ -51,11 +52,13 @@ export default function OnboardingView({
   showConfirmPassword, setShowConfirmPassword,
   needsPasswordSetup,
   loading, authError,
-  handleOnboarding, handleLogout, handleImageUpload, setView,
+  handleOnboarding, handleLogout, handleDeleteAccount, handleImageUpload, setView,
 }: Props) {
 
   const [nameError, setNameError] = useState(false);
   const [showImagePicker, setShowImagePicker] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
   const galleryInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
 
@@ -64,13 +67,13 @@ export default function OnboardingView({
   }, [isEditingProfile]);
 
   useEffect(() => {
-    if (showImagePicker) {
+    if (showImagePicker || showDeleteConfirm) {
       document.body.style.overflow = 'hidden';
     } else {
       document.body.style.overflow = '';
     }
     return () => { document.body.style.overflow = ''; };
-  }, [showImagePicker]);
+  }, [showImagePicker, showDeleteConfirm]);
 
   const steps = [
     {
@@ -403,6 +406,14 @@ export default function OnboardingView({
             <Button type="button" onClick={cancelEditProfile} className="bg-zinc-800 text-white">
               Откажи
             </Button>
+            <Button
+              type="button"
+              onClick={() => setShowDeleteConfirm(true)}
+              className="bg-red-600 text-white hover:bg-red-500"
+              disabled={loading || isDeletingAccount}
+            >
+              Избриши профил
+            </Button>
           </div>
         </form>
         {/* Hidden file inputs */}
@@ -429,6 +440,60 @@ export default function OnboardingView({
             </div>
           </div>
         )}
+
+        <AnimatePresence>
+          {showDeleteConfirm && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[2200] bg-black/80 backdrop-blur-sm flex items-center justify-center p-5"
+              onClick={() => {
+                if (!isDeletingAccount) setShowDeleteConfirm(false);
+              }}
+            >
+              <motion.div
+                initial={{ scale: 0.96, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.96, opacity: 0 }}
+                className="w-full max-w-sm rounded-3xl border border-zinc-700 bg-zinc-950 p-5"
+                onClick={e => e.stopPropagation()}
+              >
+                <h3 className="text-lg font-black text-white">Потврди бришење на профилот</h3>
+                <p className="text-sm text-zinc-300 mt-2 leading-relaxed">
+                  Оваа акција е неповратна. Откако ќе се избрише профилот, сите податоци и целиот напредок што го имаш следено ќе бидат изгубени.
+                </p>
+
+                <div className="mt-5 grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setShowDeleteConfirm(false)}
+                    className="py-3 rounded-xl bg-zinc-800 text-white font-semibold"
+                    disabled={isDeletingAccount}
+                  >
+                    Назад
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        setIsDeletingAccount(true);
+                        await handleDeleteAccount();
+                        setShowDeleteConfirm(false);
+                      } finally {
+                        setIsDeletingAccount(false);
+                      }
+                    }}
+                    className="py-3 rounded-xl bg-red-600 text-white font-semibold disabled:opacity-60"
+                    disabled={isDeletingAccount}
+                  >
+                    {isDeletingAccount ? 'Се брише...' : 'Избриши'}
+                  </button>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     );
   }

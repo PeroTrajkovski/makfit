@@ -6,3 +6,10 @@ coverage/
 *.log
 .env*
 !.env.example
+.env.local
+
+# Firebase Android config (contains project API keys and client IDs)
+android/app/google-services.json
+
+# Android generated artifacts can contain expanded keys/resources
+android/app/build/

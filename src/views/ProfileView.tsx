@@ -21,7 +21,7 @@ import { db, OperationType, handleFirestoreError } from '../firebase';
 import { cn } from '../utils/cn';
 import { generateWeekPlan } from '../data/mealPlanData';
 import { THEMES, getThemeById, isThemeId, type ThemeId } from '../data/themes';
-import { buildBadges, type BadgeWithState } from '../utils/badges';
+import { buildBadges, getBadgesByIds, type BadgeWithState } from '../utils/badges';
 import {
   applyChallengeSwaps,
   buildChallengePool,
@@ -464,6 +464,21 @@ export default function ProfileView({
   const [themeFeedback, setThemeFeedback] = useState<string | null>(null);
   const isPremium = profile?.isPremium ?? false;
 
+  const savedPremiumBadgeIds = useMemo(() => {
+    if (!user) return [] as string[];
+    const key = `makfit:seen-achievements:${user.uid}`;
+    try {
+      const raw = localStorage.getItem(key);
+      const parsed = raw ? JSON.parse(raw) : [];
+      if (!Array.isArray(parsed)) return [];
+      return parsed
+        .filter((v): v is string => typeof v === 'string' && v.startsWith('badge:'))
+        .map(v => v.slice('badge:'.length));
+    } catch {
+      return [];
+    }
+  }, [user]);
+
   useEffect(() => {
     if (!isPremium) {
       setShowThemeShop(false);
@@ -571,16 +586,37 @@ export default function ProfileView({
       const yearStart = startOfYear(today);
       const yearKey = String(today.getFullYear());
 
-      const todayMeals = allMeals.filter(m => dayKey(m.date) === todayStr);
-      const thisWeekMeals = allMeals.filter(m => new Date(m.date) >= weekStart);
-      const thisMonthMeals = allMeals.filter(m => new Date(m.date) >= monthStart);
-      const thisYearMeals = allMeals.filter(m => new Date(m.date) >= yearStart);
-      const thisWeekWeightLogs = weightHistory.filter(w => new Date(w.date) >= weekStart);
-      const thisMonthWeightLogs = weightHistory.filter(w => new Date(w.date) >= monthStart);
-      const thisYearWeightLogs = weightHistory.filter(w => new Date(w.date) >= yearStart);
-      const thisWeekPhotos = photos.filter(p => new Date(p.date) >= weekStart);
-      const thisMonthPhotos = photos.filter(p => new Date(p.date) >= monthStart);
-      const thisYearPhotos = photos.filter(p => new Date(p.date) >= yearStart);
+      const premiumWindowStartMs = profile?.subscriptionStartedAt
+        ? Date.parse(profile.subscriptionStartedAt)
+        : Number.NaN;
+      const hasPremiumWindowStart = Number.isFinite(premiumWindowStartMs);
+
+      const premiumMeals = hasPremiumWindowStart
+        ? allMeals.filter(m => new Date(m.date).getTime() >= premiumWindowStartMs)
+        : [];
+      const premiumPhotos = hasPremiumWindowStart
+        ? photos.filter(p => new Date(p.date).getTime() >= premiumWindowStartMs)
+        : [];
+      const premiumWeightLogs = hasPremiumWindowStart
+        ? weightHistory.filter(w => new Date(w.date).getTime() >= premiumWindowStartMs)
+        : [];
+      const premiumRestoreDays = hasPremiumWindowStart
+        ? streakRestoreDays.filter(day => {
+            const dayMs = Date.parse(`${day}T00:00:00.000Z`);
+            return Number.isFinite(dayMs) && dayMs >= premiumWindowStartMs;
+          })
+        : [];
+
+      const todayMeals = premiumMeals.filter(m => dayKey(m.date) === todayStr);
+      const thisWeekMeals = premiumMeals.filter(m => new Date(m.date) >= weekStart);
+      const thisMonthMeals = premiumMeals.filter(m => new Date(m.date) >= monthStart);
+      const thisYearMeals = premiumMeals.filter(m => new Date(m.date) >= yearStart);
+      const thisWeekWeightLogs = premiumWeightLogs.filter(w => new Date(w.date) >= weekStart);
+      const thisMonthWeightLogs = premiumWeightLogs.filter(w => new Date(w.date) >= monthStart);
+      const thisYearWeightLogs = premiumWeightLogs.filter(w => new Date(w.date) >= yearStart);
+      const thisWeekPhotos = premiumPhotos.filter(p => new Date(p.date) >= weekStart);
+      const thisMonthPhotos = premiumPhotos.filter(p => new Date(p.date) >= monthStart);
+      const thisYearPhotos = premiumPhotos.filter(p => new Date(p.date) >= yearStart);
 
       const mealTypesToday = new Set(todayMeals.map(m => m.type));
       const hasBreakfast = mealTypesToday.has('breakfast');
@@ -690,10 +726,11 @@ export default function ProfileView({
         yearMealItems,
       };
 
-      const dailyPool = buildChallengePool('daily', metrics);
-      const weeklyPool = buildChallengePool('weekly', metrics);
-      const monthlyPool = buildChallengePool('monthly', metrics);
-      const yearlyPool = buildChallengePool('yearly', metrics);
+      // Only calculate challenges if premium
+      const dailyPool = isPremium ? buildChallengePool('daily', metrics) : [];
+      const weeklyPool = isPremium ? buildChallengePool('weekly', metrics) : [];
+      const monthlyPool = isPremium ? buildChallengePool('monthly', metrics) : [];
+      const yearlyPool = isPremium ? buildChallengePool('yearly', metrics) : [];
 
       const dailyChallenges = applyChallengeSwaps(
         pickChallengeSet(dailyPool, `daily:${todayStr}`, getChallengeDisplayCount('daily')),
@@ -729,15 +766,15 @@ export default function ProfileView({
       const completedMonthly = monthlyChallenges.filter(isChallengeCompleted).length;
       const completedYearly = yearlyChallenges.filter(isChallengeCompleted).length;
 
-      const streak = mealLogStreakWithRestores(allMeals, streakRestoreDays);
-      const daysProteinHit = countProteinTargetDays(allMeals, proteinGoal);
+      const streak = mealLogStreakWithRestores(premiumMeals, premiumRestoreDays);
+      const daysProteinHit = countProteinTargetDays(premiumMeals, proteinGoal);
 
-      const totalPlannedMeals = countPlannedMeals(allMeals);
+      const totalPlannedMeals = countPlannedMeals(premiumMeals);
 
       const badges = buildBadges({
-        allMealsCount: allMeals.length,
-        photosCount: photos.length,
-        weightCount: weightHistory.length,
+        allMealsCount: premiumMeals.length,
+        photosCount: premiumPhotos.length,
+        weightCount: premiumWeightLogs.length,
         unlockedThemesCount: themePurchaseIds.length,
         streak,
         daysProteinHit,
@@ -747,16 +784,30 @@ export default function ProfileView({
         completedYearly,
       });
 
-      const earnedBadges = badges.filter(b => b.unlocked);
+      const earnedBadgeIds = [
+        ...savedPremiumBadgeIds,
+        ...badges.filter(b => b.unlocked).map(b => b.id),
+      ];
+      const earnedBadges = getBadgesByIds(earnedBadgeIds);
+      
+      // Calculate points and level only if premium
+      if (!isPremium) {
+        return {
+          earnedBadges: getBadgesByIds(savedPremiumBadgeIds),
+          level: Math.max(1, profile?.maxLevelAchieved ?? 1),
+          points: 0,
+        };
+      }
+      
       const challengePoints = completedDaily * 10 + completedWeekly * 30 + completedMonthly * 150 + completedYearly * 1000;
       const badgePoints = earnedBadges.length * 50;
       const points = challengePoints + badgePoints;
       const level = Math.max(getLevelFromPoints(points), profile?.maxLevelAchieved ?? 1);
 
-        return { earnedBadges, level, points };
-  }, [allMeals, challengeSwaps, photos, profile?.targetCalories, profile?.targetProtein, purchasedChallengeCompletions, streakRestoreDays, themePurchaseIds.length, weightHistory]);
+          return { earnedBadges, level, points };
+        }, [allMeals, challengeSwaps, isPremium, photos, profile?.maxLevelAchieved, profile?.subscriptionStartedAt, profile?.targetCalories, profile?.targetProtein, purchasedChallengeCompletions, savedPremiumBadgeIds, streakRestoreDays, themePurchaseIds.length, weightHistory]);
 
-  const availablePoints = Math.max(0, badgeState.points - spentPointsTotal);
+  const availablePoints = isPremium ? Math.max(0, badgeState.points - spentPointsTotal) : 0;
   const activeThemeId: ThemeId | null = isThemeId(profile?.activeTheme) ? profile.activeTheme : null;
   const unlockedThemeSet = useMemo(() => {
     const ids = new Set<ThemeId>();

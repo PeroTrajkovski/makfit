@@ -26,7 +26,7 @@ export interface BadgeWithState extends Omit<BadgeDefinition, 'unlock'> {
   unlocked: boolean;
 }
 
-const BADGE_DEFINITIONS: BadgeDefinition[] = [
+export const BADGE_DEFINITIONS: BadgeDefinition[] = [
   {
     id: 'first-meal',
     title: 'Прв оброк',
@@ -302,4 +302,22 @@ export function buildBadges(metrics: BadgeMetrics): BadgeWithState[] {
     accent: def.accent,
     unlocked: def.unlock(metrics),
   }));
+}
+
+export function getBadgesByIds(ids: string[]): BadgeWithState[] {
+  const deduped = Array.from(new Set(ids));
+  return deduped
+    .map(id => {
+      const def = BADGE_DEFINITIONS.find(b => b.id === id);
+      if (!def) return null;
+      return {
+        id: def.id,
+        title: def.title,
+        shortLabel: def.shortLabel,
+        icon: def.icon,
+        accent: def.accent,
+        unlocked: true,
+      } as BadgeWithState;
+    })
+    .filter((badge): badge is BadgeWithState => badge !== null);
 }
