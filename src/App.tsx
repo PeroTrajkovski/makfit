@@ -21,7 +21,7 @@ import {
 import {
   doc, setDoc, getDoc, collection, query, where,
   onSnapshot, addDoc, updateDoc, deleteDoc, getDocs,
-  getDocFromServer, orderBy,
+  getDocFromServer, orderBy, runTransaction,
 } from 'firebase/firestore';
 import { auth, db, OperationType, handleFirestoreError } from './firebase';
 import { cn } from './utils/cn';
@@ -97,7 +97,6 @@ interface SubscriptionPlanInput {
 }
 
 const TRIAL_DAYS = 7;
-const TRIAL_CHARGE_DELAY_DAYS = 1;
 const MONTHLY_PRICE_MKD = 299;
 
 function addDays(baseDate: Date, days: number): Date {
@@ -110,6 +109,20 @@ function addMonths(baseDate: Date, months: number): Date {
   const d = new Date(baseDate);
   d.setMonth(d.getMonth() + months);
   return d;
+}
+
+function startOfLocalDay(baseDate: Date): Date {
+  const d = new Date(baseDate);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+function normalizeEmailAddress(rawEmail?: string | null): string {
+  return String(rawEmail || '').trim().toLowerCase();
+}
+
+function getTrialUsageDocId(email: string): string {
+  return encodeURIComponent(normalizeEmailAddress(email));
 }
 
 function countMealsByType(meals: Meal[], type: string): number {
@@ -321,10 +334,17 @@ function AppContent() {
   useEffect(() => {
     if (!user || !profile || subscriptionSyncInFlightRef.current) return;
     if (!profile.isPremium || profile.subscriptionStatus !== 'trialing') return;
-    if (!profile.subscriptionNextChargeAt) return;
 
-    const nextChargeTime = new Date(profile.subscriptionNextChargeAt).getTime();
-    if (Number.isNaN(nextChargeTime) || Date.now() < nextChargeTime) return;
+    const chargeCandidates = [
+      profile.subscriptionTrialEndsAt,
+      profile.subscriptionNextChargeAt,
+    ]
+      .map(value => new Date(String(value || '')).getTime())
+      .filter(value => !Number.isNaN(value));
+
+    if (chargeCandidates.length === 0) return;
+    const nextChargeTime = Math.min(...chargeCandidates);
+    if (Date.now() < nextChargeTime) return;
 
     const now = new Date();
     const monthlyExpiresAt = addMonths(now, 1).toISOString();
@@ -1398,8 +1418,16 @@ function AppContent() {
     const now = new Date();
 
     if (plan.id === 'trial-7-days') {
-      const trialEndsAt = addDays(now, TRIAL_DAYS).toISOString();
-      const nextChargeAt = addDays(now, TRIAL_DAYS + TRIAL_CHARGE_DELAY_DAYS).toISOString();
+      const trialEmail = normalizeEmailAddress(user.email || email);
+      if (!trialEmail) {
+        throw new Error('Не можеме да активираме пробен период без валидна е-пошта.');
+      }
+
+      const profileRef = doc(db, 'profiles', user.uid);
+      const trialUsageRef = doc(db, 'trial_usage', getTrialUsageDocId(trialEmail));
+      const trialEndsAt = addDays(startOfLocalDay(now), TRIAL_DAYS).toISOString();
+      const nextChargeAt = trialEndsAt;
+      const nowIso = now.toISOString();
       const updatedProfile: Profile = {
         ...profile,
         isPremium: true,
@@ -1409,30 +1437,47 @@ function AppContent() {
         subscriptionDurationMonths: 1,
         subscriptionPriceMKD: 0,
         subscriptionCurrency: 'MKD',
-        subscriptionStartedAt: now.toISOString(),
-        subscriptionTrialStartedAt: now.toISOString(),
+        subscriptionStartedAt: nowIso,
+        subscriptionTrialStartedAt: nowIso,
         subscriptionTrialEndsAt: trialEndsAt,
         subscriptionNextChargeAt: nextChargeAt,
         subscriptionNextPlanId: 'monthly',
         subscriptionNextPlanTitle: '1 месец',
         subscriptionNextPriceMKD: MONTHLY_PRICE_MKD,
       };
-      await updateDoc(doc(db, 'profiles', user.uid), {
-        isPremium: true,
-        subscriptionStatus: 'trialing',
-        subscriptionPlanId: 'trial-7-days',
-        subscriptionPlanTitle: '7 дена пробен период',
-        subscriptionDurationMonths: 1,
-        subscriptionPriceMKD: 0,
-        subscriptionCurrency: 'MKD',
-        subscriptionStartedAt: now.toISOString(),
-        subscriptionTrialStartedAt: now.toISOString(),
-        subscriptionTrialEndsAt: trialEndsAt,
-        subscriptionNextChargeAt: nextChargeAt,
-        subscriptionNextPlanId: 'monthly',
-        subscriptionNextPlanTitle: '1 месец',
-        subscriptionNextPriceMKD: MONTHLY_PRICE_MKD,
-        subscriptionPaymentLast4: null,
+
+      await runTransaction(db, async transaction => {
+        const trialUsageSnap = await transaction.get(trialUsageRef);
+        if (trialUsageSnap.exists()) {
+          throw new Error('Овој е-пошта веќе има искористено бесплатен пробен период.');
+        }
+
+        transaction.update(profileRef, {
+          isPremium: true,
+          subscriptionStatus: 'trialing',
+          subscriptionPlanId: 'trial-7-days',
+          subscriptionPlanTitle: '7 дена пробен период',
+          subscriptionDurationMonths: 1,
+          subscriptionPriceMKD: 0,
+          subscriptionCurrency: 'MKD',
+          subscriptionStartedAt: nowIso,
+          subscriptionTrialStartedAt: nowIso,
+          subscriptionTrialEndsAt: trialEndsAt,
+          subscriptionNextChargeAt: nextChargeAt,
+          subscriptionNextPlanId: 'monthly',
+          subscriptionNextPlanTitle: '1 месец',
+          subscriptionNextPriceMKD: MONTHLY_PRICE_MKD,
+          subscriptionPaymentLast4: null,
+        });
+
+        transaction.set(trialUsageRef, {
+          email: trialEmail,
+          used: true,
+          usedAt: nowIso,
+          userId: user.uid,
+          trialPlanId: 'trial-7-days',
+          nextPlanId: 'monthly',
+        });
       });
       setProfile(updatedProfile);
       return;
@@ -1675,6 +1720,7 @@ function AppContent() {
           <AiMealPlanView
             key="mealplan"
             profile={profile}
+            userId={user?.uid ?? null}
             meals={meals}
             setView={setView}
             saveMealPlanPreference={saveMealPlanPreference}

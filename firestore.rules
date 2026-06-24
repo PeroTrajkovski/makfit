@@ -246,6 +246,18 @@ service cloud.firestore {
              isValidDateString(data.date);
     }
 
+    function isValidTrialUsage(data) {
+      return data.keys().hasAll(['email', 'used', 'usedAt', 'userId']) &&
+             hasOnlyAllowedFields(['email', 'used', 'usedAt', 'userId', 'trialPlanId', 'nextPlanId']) &&
+             data.email is string && isValidEmail(data.email) &&
+             data.email == request.auth.token.email &&
+             data.used == true &&
+             isValidDateString(data.usedAt) &&
+             data.userId == request.auth.uid &&
+             (!('trialPlanId' in data) || data.trialPlanId is string) &&
+             (!('nextPlanId' in data) || data.nextPlanId is string);
+    }
+
     // ===============================================================
     // Rules
     // ===============================================================
@@ -327,6 +339,13 @@ service cloud.firestore {
     match /theme_purchases/{purchaseId} {
       allow read: if isAuthenticated() && (resource == null || resource.data.userId == request.auth.uid);
       allow create: if isPremiumUser() && request.resource.data.userId == request.auth.uid && isValidThemePurchase(request.resource.data);
+      allow update: if false;
+      allow delete: if false;
+    }
+
+    match /trial_usage/{docId} {
+      allow read: if isAuthenticated() && resource.data.email == request.auth.token.email;
+      allow create: if isAuthenticated() && isValidTrialUsage(request.resource.data);
       allow update: if false;
       allow delete: if false;
     }

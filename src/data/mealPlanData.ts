@@ -6,12 +6,16 @@ export interface Ingredient {
   unit: 'г' | 'мл' | 'ком';
 }
 
+export type MealType = 'breakfast' | 'lunch' | 'dinner' | 'snack';
+
 export interface PlanMeal {
+  meal_type: MealType;
   name: string;
   kcal: number;
   protein: number;
   carbs: number;
   fat: number;
+  categories: MealPlanType[];
   ingredients: Ingredient[];
 }
 
@@ -34,35 +38,14 @@ function seededShuffle<T>(arr: T[], seed: number): T[] {
   return result;
 }
 
-const BREAKFAST = mealsData.breakfast as PlanMeal[];
-const LUNCH     = mealsData.lunch     as PlanMeal[];
-const DINNER    = mealsData.dinner    as PlanMeal[];
-const SNACKS    = mealsData.snacks    as PlanMeal[];
+const ALL_MEALS = mealsData as PlanMeal[];
 
 // ---------------------------------------------------------------------------
 // Plan type filters
 // ---------------------------------------------------------------------------
 
-const MEAT_KEYWORDS = [
-  'пилешк', 'говедск', 'свинск', 'телешк', 'месо', 'мелено', 'шунка', 'кебап',
-  'шницел', 'бутов', 'ролад', 'скара', 'туна', 'риба', 'лосос',
-];
-const DAIRY_KEYWORDS = [
-  'млеко', 'јогурт', 'сирење', 'урда', 'моцарела', 'путер', 'грчки јогурт',
-];
-
-function mealText(meal: PlanMeal): string {
-  return [meal.name, ...meal.ingredients.map(i => i.name)].join(' ').toLowerCase();
-}
-
-function hasMeatIngredient(meal: PlanMeal): boolean {
-  const text = mealText(meal);
-  return MEAT_KEYWORDS.some(keyword => text.includes(keyword));
-}
-
-function hasLactoseIngredient(meal: PlanMeal): boolean {
-  const text = mealText(meal);
-  return DAIRY_KEYWORDS.some(keyword => text.includes(keyword));
+function mealsByType(mealType: MealType): PlanMeal[] {
+  return ALL_MEALS.filter(meal => meal.meal_type === mealType);
 }
 
 function sortByBestForPlan(meals: PlanMeal[], planType: MealPlanType): PlanMeal[] {
@@ -88,30 +71,8 @@ function scoreSimilarity(base: PlanMeal, candidate: PlanMeal): number {
 }
 
 function filterByPlanType(meals: PlanMeal[], planType: MealPlanType): PlanMeal[] {
-  switch (planType) {
-    case 'high_protein':
-      return meals.filter(m => m.protein >= 20).length >= 2
-        ? meals.filter(m => m.protein >= 20)
-        : sortByBestForPlan(meals, planType).slice(0, Math.max(3, Math.ceil(meals.length / 2)));
-    case 'low_fat':
-      return meals.filter(m => m.fat <= 16).length >= 2
-        ? meals.filter(m => m.fat <= 16)
-        : sortByBestForPlan(meals, planType).slice(0, Math.max(3, Math.ceil(meals.length / 2)));
-    case 'low_carbs':
-      return meals.filter(m => m.carbs <= 35).length >= 2
-        ? meals.filter(m => m.carbs <= 35)
-        : sortByBestForPlan(meals, planType).slice(0, Math.max(3, Math.ceil(meals.length / 2)));
-    case 'vegetarian':
-      return meals.filter(m => !hasMeatIngredient(m)).length >= 2
-        ? meals.filter(m => !hasMeatIngredient(m))
-        : meals;
-    case 'lactose_free':
-      return meals.filter(m => !hasLactoseIngredient(m)).length >= 2
-        ? meals.filter(m => !hasLactoseIngredient(m))
-        : meals;
-    default:
-      return meals;
-  }
+  const filtered = meals.filter(meal => meal.categories.includes(planType));
+  return sortByBestForPlan(filtered, planType);
 }
 
 // ---------------------------------------------------------------------------
@@ -119,14 +80,15 @@ function filterByPlanType(meals: PlanMeal[], planType: MealPlanType): PlanMeal[]
 // ---------------------------------------------------------------------------
 
 function generateDayPlan(targetCalories: number, targetProtein: number, seed: number, planType: MealPlanType): DayPlan {
-  const breakfastPool = filterByPlanType(BREAKFAST, planType);
-  const lunchPool     = filterByPlanType(LUNCH, planType);
-  const dinnerPool    = filterByPlanType(DINNER, planType);
-  const snackPool     = filterByPlanType(SNACKS, planType);
+  const breakfastPool = filterByPlanType(mealsByType('breakfast'), planType);
+  const lunchPool     = filterByPlanType(mealsByType('lunch'), planType);
+  const dinnerPool    = filterByPlanType(mealsByType('dinner'), planType);
+  const snackPool     = filterByPlanType(mealsByType('snack'), planType);
 
   const breakfast = seededShuffle(breakfastPool, seed)[0];
   const lunch     = seededShuffle(lunchPool,     seed + 1111)[0];
   const dinner    = seededShuffle(dinnerPool,    seed + 2222)[0];
+  if (!breakfast || !lunch || !dinner) return [];
   const mains     = [breakfast, lunch, dinner];
 
   // Fill remaining calories with light snacks (Ужинки)
@@ -162,6 +124,56 @@ function generateDayPlan(targetCalories: number, targetProtein: number, seed: nu
   return result;
 }
 
+function diversifyWeekSnackSlots(week: WeekPlan, planType: MealPlanType, seed: number): WeekPlan {
+  const snackPool = filterByPlanType(mealsByType('snack'), planType);
+  if (snackPool.length <= 1) return week;
+
+  const recentBySlot = new Map<number, string[]>();
+  const MAX_RECENT_PER_SLOT = Math.min(3, snackPool.length - 1);
+
+  const diversified = week.map(day => day.map(meal => ({ ...meal })));
+
+  for (let dayIndex = 0; dayIndex < diversified.length; dayIndex++) {
+    const day = diversified[dayIndex];
+    let snackSlot = 0;
+
+    for (let mealIndex = 0; mealIndex < day.length; mealIndex++) {
+      if (day[mealIndex].type !== 'snack') continue;
+
+      const recent = recentBySlot.get(snackSlot) ?? [];
+      const current = day[mealIndex];
+      const usedInDay = new Set(day.map(meal => meal.name));
+
+      if (recent.includes(current.name)) {
+        let candidates = snackPool.filter(snack =>
+          snack.name !== current.name &&
+          !recent.includes(snack.name) &&
+          !usedInDay.has(snack.name),
+        );
+
+        if (candidates.length === 0) {
+          candidates = snackPool.filter(snack =>
+            snack.name !== current.name &&
+            !usedInDay.has(snack.name),
+          );
+        }
+
+        if (candidates.length > 0) {
+          const replacement = seededShuffle(candidates, seed + dayIndex * 181 + snackSlot * 37)[0];
+          day[mealIndex] = { ...replacement, type: 'snack' };
+        }
+      }
+
+      const updatedName = day[mealIndex].name;
+      const updatedRecent = [...recent, updatedName].slice(-MAX_RECENT_PER_SLOT);
+      recentBySlot.set(snackSlot, updatedRecent);
+      snackSlot++;
+    }
+  }
+
+  return diversified;
+}
+
 export function getMealReplacement(
   currentMeal: PlanMeal,
   options: {
@@ -175,8 +187,8 @@ export function getMealReplacement(
   const { planType, seed, mealType, mainSlot, excludeNames = [] } = options;
 
   const poolByCategory = mealType === 'snack'
-    ? SNACKS
-    : (mainSlot === 0 ? BREAKFAST : mainSlot === 1 ? LUNCH : DINNER);
+    ? mealsByType('snack')
+    : mealsByType(mainSlot === 0 ? 'breakfast' : mainSlot === 1 ? 'lunch' : 'dinner');
 
   const filteredPool = filterByPlanType(poolByCategory, planType);
   const uniqueCandidates = filteredPool.filter(m =>
@@ -203,7 +215,9 @@ export function generateWeekPlan(
   planType: MealPlanType,
   targetProtein = 0,
 ): WeekPlan {
-  return Array.from({ length: 7 }, (_, dayIndex) =>
+  const baseWeek = Array.from({ length: 7 }, (_, dayIndex) =>
     generateDayPlan(targetCalories, targetProtein, seed + dayIndex * 997, planType)
   );
+
+  return diversifyWeekSnackSlots(baseWeek, planType, seed + 7777);
 }

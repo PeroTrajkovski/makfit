@@ -87,7 +87,7 @@ const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
     months: 1,
     priceMKD: 0,
     perMonthMKD: 0,
-    subtitle: '0 МКД денес, автоматска месечна наплата по пробниот период',
+    subtitle: '0 МКД денес, наплата на почеток на 8-миот ден (1 месец)',
     badgeText: 'FREE TRIAL',
     isTrial: true,
   },
@@ -106,6 +106,7 @@ const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
     priceMKD: 1499,
     perMonthMKD: 250,
     subtitle: 'Наплата на секои 6 месеци',
+    savingsText: 'Заштеди 16.44%',
   },
   {
     id: 'yearly',
@@ -211,8 +212,12 @@ export default function SubscriptionView({ profile, setView, onSubscribe }: Prop
     try {
       await onSubscribe(selectedPlan);
       setShowPlansModal(false);
-    } catch {
-      setSubscribeError('Настана проблем при активирање. Обиди се повторно.');
+    } catch (error) {
+      if (error instanceof Error && error.message) {
+        setSubscribeError(error.message);
+      } else {
+        setSubscribeError('Настана проблем при активирање. Обиди се повторно.');
+      }
     } finally {
       setIsSubmittingPlan(false);
     }
@@ -254,8 +259,8 @@ export default function SubscriptionView({ profile, setView, onSubscribe }: Prop
                 {isTrialing && (
                   <p className="mt-2 text-xs text-amber-300">
                     {trialDaysLeft > 0
-                      ? `Пробниот период истекува за ${trialDaysLeft} дена. Наплатата за месечен план ќе се активира следниот ден.`
-                      : 'Пробниот период завршува наскоро. Следниот ден автоматски се активира месечната претплата.'}
+                      ? `Пробниот период истекува за ${trialDaysLeft} дена. На почеток на 8-миот ден автоматски се активира месечна претплата.`
+                      : 'Пробниот период е истечен. Месечната претплата е автоматски активирана.'}
                   </p>
                 )}
                 <div className="mt-4 bg-black/30 border border-amber-500/25 rounded-2xl p-3">

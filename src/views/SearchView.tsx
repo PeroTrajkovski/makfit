@@ -30,6 +30,36 @@ export default function SearchView({ user, isPremium, selectedMealType, selected
   const [scanError, setScanError] = useState<string | null>(null);
   const canLogMealsForSelectedDate = selectedDate === localDateStr(new Date());
 
+  const getPortionUnitLabel = (food: Food | null): 'г' | 'мл' =>
+    food?.portionUnit === 'ml' ? 'мл' : 'г';
+
+  const parseNumber = (value: unknown): number | null => {
+    if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+    if (typeof value === 'string') {
+      const normalized = value.replace(',', '.').trim();
+      const parsed = Number(normalized);
+      return Number.isFinite(parsed) ? parsed : null;
+    }
+    return null;
+  };
+
+  const getDefaultPortionFromOff = (quantity: unknown, unit: unknown, basis: 'g' | 'ml'): number | undefined => {
+    const q = parseNumber(quantity);
+    if (!q || q <= 0) return undefined;
+    const u = String(unit || '').toLowerCase().trim();
+
+    if (basis === 'ml') {
+      if (u === 'ml') return Math.round(q);
+      if (u === 'l') return Math.round(q * 1000);
+      if (u === 'cl') return Math.round(q * 10);
+      return undefined;
+    }
+
+    if (u === 'g') return Math.round(q);
+    if (u === 'kg') return Math.round(q * 1000);
+    return undefined;
+  };
+
   const scanBarcode = async () => {
     if (!canLogMealsForSelectedDate) {
       setScanError('Може да внесуваш храна само за денес.');
@@ -64,22 +94,31 @@ export default function SearchView({ user, isPremium, selectedMealType, selected
       }
       const p = data.product;
       const n = p.nutriments || {};
-      const cal = n['energy-kcal_100g'] ?? (n['energy_100g'] ? Math.round(n['energy_100g'] / 4.184) : 0);
-      const protein = n['proteins_100g'] ?? 0;
-      const carbs = n['carbohydrates_100g'] ?? 0;
-      const fat = n['fat_100g'] ?? 0;
+      const hasPer100ml = [n['energy-kcal_100ml'], n['energy_100ml'], n['proteins_100ml'], n['carbohydrates_100ml'], n['fat_100ml']]
+        .some(v => parseNumber(v) !== null);
+      const basis: 'g' | 'ml' = hasPer100ml ? 'ml' : 'g';
+
+      const cal = basis === 'ml'
+        ? (parseNumber(n['energy-kcal_100ml']) ?? (parseNumber(n['energy_100ml']) ? Math.round((parseNumber(n['energy_100ml']) || 0) / 4.184) : 0))
+        : (parseNumber(n['energy-kcal_100g']) ?? (parseNumber(n['energy_100g']) ? Math.round((parseNumber(n['energy_100g']) || 0) / 4.184) : 0));
+      const protein = basis === 'ml' ? (parseNumber(n['proteins_100ml']) ?? 0) : (parseNumber(n['proteins_100g']) ?? 0);
+      const carbs = basis === 'ml' ? (parseNumber(n['carbohydrates_100ml']) ?? 0) : (parseNumber(n['carbohydrates_100g']) ?? 0);
+      const fat = basis === 'ml' ? (parseNumber(n['fat_100ml']) ?? 0) : (parseNumber(n['fat_100g']) ?? 0);
       const name = p.product_name || p.product_name_en || `Баркод ${barcode}`;
+      const defaultPortion = getDefaultPortionFromOff(p.product_quantity, p.product_quantity_unit, basis);
       const scannedFood: Food = {
         id: `barcode-${barcode}`,
         name,
         name_lowercase: name.toLowerCase(),
-        calories: Math.round(cal),
+        calories: Math.round(cal || 0),
         protein: Math.round(protein * 10) / 10,
         carbs: Math.round(carbs * 10) / 10,
         fat: Math.round(fat * 10) / 10,
+        defaultPortion,
+        portionUnit: basis,
       };
       setSelectedFoodForQuantity(scannedFood);
-      setFoodQuantity('100');
+      setFoodQuantity(String(defaultPortion || 100));
     } catch {
       setScanError('Грешка при скенирање. Обидете се повторно.');
     } finally {
@@ -87,14 +126,14 @@ export default function SearchView({ user, isPremium, selectedMealType, selected
     }
   };
 
-  const logMealScanned = async (food: Food, grams: number) => {
+  const logMealScanned = async (food: Food, quantity: number) => {
     if (!user || !canLogMealsForSelectedDate) return;
     try {
       await addDoc(collection(db, 'meals'), {
         userId: user.uid,
         type: selectedMealType,
         date: new Date(selectedDate).toISOString(),
-        items: [{ food, amount: grams / 100 }],
+        items: [{ food, amount: quantity / 100 }],
       });
       setView('dashboard');
       setSelectedFoodForQuantity(null);
@@ -135,7 +174,7 @@ export default function SearchView({ user, isPremium, selectedMealType, selected
     }
   };
 
-  const logMeal = async (foodId: string, grams: number) => {
+  const logMeal = async (foodId: string, quantity: number) => {
     if (!user || !canLogMealsForSelectedDate) return;
     const food = searchResults.find(f => f.id === foodId);
     if (!food) return;
@@ -144,7 +183,7 @@ export default function SearchView({ user, isPremium, selectedMealType, selected
         userId: user.uid,
         type: selectedMealType,
         date: new Date(selectedDate).toISOString(),
-        items: [{ food, amount: grams / 100 }],
+        items: [{ food, amount: quantity / 100 }],
       });
       setView('dashboard');
       setSelectedFoodForQuantity(null);
@@ -189,12 +228,13 @@ export default function SearchView({ user, isPremium, selectedMealType, selected
           {searchResults.map(food => {
             const isStewOrSoup = food.name.toLowerCase().includes('манџа') || food.name.toLowerCase().includes('чорба') || food.name.toLowerCase().includes('грав');
             const isMeat = food.name.toLowerCase().includes('стек') || food.name.toLowerCase().includes('бифтек') || food.name.toLowerCase().includes('месо');
-            const defaultGrams = food.defaultPortion || (isStewOrSoup ? 300 : isMeat ? 150 : 100);
+            const portionUnitLabel = getPortionUnitLabel(food);
+            const defaultAmount = food.defaultPortion || (portionUnitLabel === 'мл' ? 250 : isStewOrSoup ? 300 : isMeat ? 150 : 100);
 
             return (
               <div key={food.id} className="w-full bg-zinc-900 rounded-2xl flex items-center overflow-hidden">
                 <button
-                  onClick={() => logMeal(food.id, defaultGrams)}
+                  onClick={() => logMeal(food.id, defaultAmount)}
                   disabled={!canLogMealsForSelectedDate}
                   className={cn(
                     'flex-1 p-4 text-left transition-colors',
@@ -206,11 +246,15 @@ export default function SearchView({ user, isPremium, selectedMealType, selected
                     {food.calories} kcal • П: {food.protein}г • Ј: {food.carbs}г • М: {food.fat}г
                   </p>
                   <p className="text-[10px] text-emerald-500 mt-1 font-bold uppercase tracking-wider">
-                    + Додади порција ({defaultGrams}г)
+                    + Додади порција ({defaultAmount}{portionUnitLabel})
                   </p>
                 </button>
                 <button
-                  onClick={() => { if (!canLogMealsForSelectedDate) return; setSelectedFoodForQuantity(food); setFoodQuantity(String(food.defaultPortion || 100)); }}
+                  onClick={() => {
+                    if (!canLogMealsForSelectedDate) return;
+                    setSelectedFoodForQuantity(food);
+                    setFoodQuantity(String(defaultAmount));
+                  }}
                   disabled={!canLogMealsForSelectedDate}
                   className={cn(
                     'p-4 h-full border-l border-zinc-800 text-zinc-500 transition-colors',
@@ -270,14 +314,14 @@ export default function SearchView({ user, isPremium, selectedMealType, selected
                   <Utensils className="text-emerald-500" size={32} />
                 </div>
                 <h3 className="text-2xl font-bold mb-1">{selectedFoodForQuantity.name}</h3>
-                <p className="text-zinc-500 text-sm">Внесете количина во грамови</p>
+                <p className="text-zinc-500 text-sm">Внесете количина во {getPortionUnitLabel(selectedFoodForQuantity)}</p>
               </div>
 
               <div className="space-y-6">
                 <div>
                   <div className="flex justify-between text-xs font-bold uppercase tracking-widest text-zinc-500 mb-2 px-1">
-                    <span>Количина (г)</span>
-                    <span className="text-emerald-500">{foodQuantity}г</span>
+                    <span>Количина ({getPortionUnitLabel(selectedFoodForQuantity)})</span>
+                    <span className="text-emerald-500">{foodQuantity}{getPortionUnitLabel(selectedFoodForQuantity)}</span>
                   </div>
                   <Input
                     type="number"
@@ -287,7 +331,7 @@ export default function SearchView({ user, isPremium, selectedMealType, selected
                     autoFocus
                   />
                   <div className="grid grid-cols-4 gap-2 mt-3">
-                    {[100, 200, 350, 500].map(q => (
+                    {((selectedFoodForQuantity?.portionUnit === 'ml') ? [100, 250, 330, 500] : [100, 200, 350, 500]).map(q => (
                       <button
                         key={q}
                         onClick={() => setFoodQuantity(String(q))}
@@ -296,7 +340,7 @@ export default function SearchView({ user, isPremium, selectedMealType, selected
                           Number(foodQuantity) === q ? 'bg-emerald-500 border-emerald-500 text-black' : 'bg-zinc-800/50 border-zinc-700 text-zinc-400 hover:border-zinc-500',
                         )}
                       >
-                        {`${q}г`}
+                        {`${q}${getPortionUnitLabel(selectedFoodForQuantity)}`}
                       </button>
                     ))}
                   </div>

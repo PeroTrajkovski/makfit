@@ -8,6 +8,7 @@ import type { MealPlanType, WeekPlan, PlanMeal } from '../data/mealPlanData';
 
 interface Props {
   profile: Profile | null;
+  userId: string | null;
   meals: Meal[];
   setView: (v: ViewType) => void;
   saveMealPlanPreference: (planType: MealPlanType, seed: number) => Promise<void>;
@@ -15,6 +16,7 @@ interface Props {
 }
 
 interface StoredMealPlanPreference {
+  userId: string;
   planType: MealPlanType;
   seed: number;
 }
@@ -22,22 +24,23 @@ interface StoredMealPlanPreference {
 const MK_DAYS = ['Понеделник', 'Вторник', 'Среда', 'Четврток', 'Петок', 'Сабота', 'Недела'];
 const STORAGE_KEY = 'makfit.mealPlanPreference';
 
-function readStoredPreference(): StoredMealPlanPreference | null {
+function readStoredPreference(userId: string | null): StoredMealPlanPreference | null {
+  if (!userId || typeof window === 'undefined') return null;
   if (typeof window === 'undefined') return null;
   const raw = localStorage.getItem(STORAGE_KEY);
   if (!raw) return null;
   try {
     const parsed = JSON.parse(raw) as StoredMealPlanPreference;
-    if (!parsed?.planType || !parsed?.seed) return null;
+    if (!parsed?.userId || parsed.userId !== userId || !parsed?.planType || !parsed?.seed) return null;
     return parsed;
   } catch {
     return null;
   }
 }
 
-function writeStoredPreference(planType: MealPlanType, seed: number): void {
-  if (typeof window === 'undefined') return;
-  localStorage.setItem(STORAGE_KEY, JSON.stringify({ planType, seed }));
+function writeStoredPreference(userId: string | null, planType: MealPlanType, seed: number): void {
+  if (!userId || typeof window === 'undefined') return;
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({ userId, planType, seed }));
 }
 
 const PLAN_OPTIONS: { type: MealPlanType; title: string; desc: string; icon: React.ElementType; color: string; bg: string; border: string }[] = [
@@ -48,13 +51,13 @@ const PLAN_OPTIONS: { type: MealPlanType; title: string; desc: string; icon: Rea
   { type: 'lactose_free', title: 'Без лактоза', desc: 'Оброци без млечни производи', icon: MilkOff, color: 'text-purple-400', bg: 'bg-purple-500/10', border: 'border-purple-500/25' },
 ];
 
-export default function AiMealPlanView({ profile, meals, setView, saveMealPlanPreference, addPlannedMealToDailyProgress }: Props) {
+export default function AiMealPlanView({ profile, userId, meals, setView, saveMealPlanPreference, addPlannedMealToDailyProgress }: Props) {
   const [selectedPlanType, setSelectedPlanType] = useState<MealPlanType | null>(() => {
-    const stored = readStoredPreference();
+    const stored = readStoredPreference(userId);
     return profile?.mealPlanType ?? stored?.planType ?? null;
   });
   const [seed, setSeed] = useState(() => {
-    const stored = readStoredPreference();
+    const stored = readStoredPreference(userId);
     return profile?.mealPlanSeed ?? stored?.seed ?? Date.now();
   });
   const [isGenerating, setIsGenerating] = useState(false);
@@ -83,15 +86,15 @@ export default function AiMealPlanView({ profile, meals, setView, saveMealPlanPr
     if (profile.mealPlanType && profile.mealPlanSeed) {
       setSelectedPlanType(profile.mealPlanType);
       setSeed(profile.mealPlanSeed);
-      writeStoredPreference(profile.mealPlanType, profile.mealPlanSeed);
+      writeStoredPreference(userId, profile.mealPlanType, profile.mealPlanSeed);
       return;
     }
-    const stored = readStoredPreference();
+    const stored = readStoredPreference(userId);
     if (stored) {
       setSelectedPlanType(stored.planType);
       setSeed(stored.seed);
     }
-  }, [profile?.mealPlanType, profile?.mealPlanSeed]);
+  }, [profile, userId]);
 
   useEffect(() => {
     if (!selectedPlanType || generationRequestId === 0) return;
@@ -106,7 +109,7 @@ export default function AiMealPlanView({ profile, meals, setView, saveMealPlanPr
     setSelectedPlanType(type);
     setSeed(nextSeed);
     setGenerationRequestId(nextSeed);
-    writeStoredPreference(type, nextSeed);
+    writeStoredPreference(userId, type, nextSeed);
     await saveMealPlanPreference(type, nextSeed);
   };
 
@@ -115,7 +118,7 @@ export default function AiMealPlanView({ profile, meals, setView, saveMealPlanPr
     const nextSeed = Date.now();
     setSeed(nextSeed);
     setGenerationRequestId(nextSeed);
-    writeStoredPreference(selectedPlanType, nextSeed);
+    writeStoredPreference(userId, selectedPlanType, nextSeed);
     await saveMealPlanPreference(selectedPlanType, nextSeed);
   };
 

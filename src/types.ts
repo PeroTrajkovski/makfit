@@ -7,6 +7,7 @@ export interface Food {
   carbs: number;
   fat: number;
   defaultPortion?: number;
+  portionUnit?: 'g' | 'ml';
 }
 
 export interface Profile {

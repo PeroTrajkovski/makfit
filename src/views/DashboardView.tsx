@@ -331,7 +331,7 @@ export default function DashboardView({
                     <div className="flex-1">
                       <p className="text-sm font-medium">{item.food?.name || 'Непозната храна'}</p>
                       <p className="text-[10px] text-zinc-500 uppercase font-bold">
-                        {Math.round(item.amount * 100)}г • {Math.round((item.food?.calories || 0) * item.amount)} kcal
+                        {Math.round(item.amount * 100)}{item.food?.portionUnit === 'ml' ? 'мл' : 'г'} • {Math.round((item.food?.calories || 0) * item.amount)} kcal
                       </p>
                       <div className="flex gap-2 text-[10px] font-bold text-zinc-600 mt-1">
                         <span>П: {Math.round((item.food?.protein || 0) * item.amount)}г</span>
